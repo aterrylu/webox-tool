@@ -102,9 +102,11 @@ program
   .requiredOption('--id <id>', 'Product ID')
   .requiredOption('--date <date>', 'Date (YYYY-MM-DD)')
   .option('--meal <meal>', 'Meal type (lunch|dinner)', 'lunch')
+  .option('--options <options>', 'Comma-separated option names to select (e.g. "Pollo Asado,Wet Burrito")')
   .action(async (opts) => {
     const client = new WeboxClient(getConfig());
-    const cart = await client.addToCart(parseInt(opts.id), opts.date, opts.meal);
+    const options = opts.options ? opts.options.split(',').map((s: string) => s.trim()) : undefined;
+    const cart = await client.addToCart(parseInt(opts.id), opts.date, opts.meal, options);
     console.log(`Added product ${opts.id} to cart`);
     console.log(formatCart(cart));
   });

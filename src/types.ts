@@ -39,6 +39,13 @@ export interface Brand {
   itemCount: number;
 }
 
+export interface VariationGroup {
+  name: string;
+  type: 'radio' | 'checkbox';
+  required: boolean;
+  options: string[];
+}
+
 export interface ProductDetail extends MenuItem {
   description?: string;
   portions: {
@@ -47,6 +54,7 @@ export interface ProductDetail extends MenuItem {
     price: number;
     isDefault: boolean;
   }[];
+  variations: VariationGroup[];
   dietary: string[];
   ingredients?: string;
   allergens?: string[];

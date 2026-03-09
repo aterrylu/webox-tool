@@ -80,6 +80,42 @@ export async function extractProductDetail(page: Page, productId: number): Promi
       }
     });
 
+    // Variation options (protein choices, styles, etc.)
+    var variations: { name: string; type: 'radio' | 'checkbox'; required: boolean; options: string[] }[] = [];
+    var variationWrappers = modal.querySelectorAll('.variation-item-wrapper');
+    variationWrappers.forEach(function (wrapper) {
+      var list = wrapper.querySelector('.variation-list');
+      if (!list) return;
+      var isRadio = list.classList.contains('RADIO');
+      var headingEl = wrapper.querySelector('.heading > span');
+      var groupName = '';
+      if (headingEl) {
+        headingEl.childNodes.forEach(function(node) {
+          if (node.nodeType === 3) {
+            var t = (node.textContent || '').trim();
+            if (t) groupName = t;
+          }
+        });
+      }
+      var requiredEl = wrapper.querySelector('.validation-tag, [class*="required"]');
+      var isRequired = requiredEl !== null || isRadio;
+      var optionNames: string[] = [];
+      var items = list.querySelectorAll('app-product-item');
+      items.forEach(function (item) {
+        var nameEl = item.querySelector('.item-name, .product-name');
+        var optName = nameEl ? (nameEl.textContent || '').trim() : (item.textContent || '').trim();
+        if (optName) optionNames.push(optName);
+      });
+      if (optionNames.length > 0) {
+        variations.push({
+          name: groupName || 'Options',
+          type: isRadio ? 'radio' : 'checkbox',
+          required: isRequired,
+          options: optionNames,
+        });
+      }
+    });
+
     // Ingredients
     var ingredientsEl = modal.querySelector('.ingredients-and-allergens-wrap .item-wrap');
     var ingredients = ingredientsEl ? (ingredientsEl.textContent || '').trim() : '';
@@ -129,6 +165,7 @@ export async function extractProductDetail(page: Page, productId: number): Promi
       portionCount: portions.length || 1,
       description: description,
       portions: portions,
+      variations: variations,
       dietary: dietary,
       ingredients: ingredients,
       allergens: allergens,

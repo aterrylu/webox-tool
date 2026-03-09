@@ -83,6 +83,14 @@ export function formatProductDetail(product: ProductDetail): string {
     }
   }
 
+  if (product.variations.length > 0) {
+    lines.push(`\n   🔧 Options:`);
+    for (const v of product.variations) {
+      const req = v.required ? ' (REQUIRED)' : '';
+      lines.push(`     ${v.name}${req}: ${v.options.join(', ')}`);
+    }
+  }
+
   if (product.dietary.length > 0) {
     lines.push(`   🥗 Dietary: ${product.dietary.join(', ')}`);
   }

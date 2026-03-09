@@ -88,10 +88,20 @@ export class WeboxClient {
 
   // --- Write operations (cart only — never checkout) ---
 
-  async addToCart(id: number, date: string, meal: 'lunch' | 'dinner'): Promise<Cart> {
+  async addToCart(id: number, date: string, meal: 'lunch' | 'dinner', options?: string[]): Promise<Cart> {
     const page = await this.session.navigate(date, meal);
+    // Scroll to load all lazy-loaded items (same as menu extractor)
+    let prevCount = 0;
+    for (let i = 0; i < 20; i++) {
+      const currentCount = await page.evaluate(() => document.querySelectorAll('.product-menu-item-wrapper').length);
+      if (currentCount === prevCount && i > 0) break;
+      prevCount = currentCount;
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(800);
+    }
+    await page.evaluate(() => window.scrollTo(0, 0));
     try {
-      await addToCart(page, id);
+      await addToCart(page, id, options);
     } catch (err) {
       // Close any modal/portion picker left open on error
       await page.keyboard.press('Escape').catch(function () {});

@@ -34,7 +34,7 @@ async function dismissOverlays(page: Page): Promise<void> {
  * A "Planned Order Detected" dialog may appear if there's a conflicting
  * auto-order — we dismiss it automatically.
  */
-export async function addToCart(page: Page, productId: number): Promise<void> {
+export async function addToCart(page: Page, productId: number, options?: string[]): Promise<void> {
   // Find card by product ID
   const card = await page.$(`[id$="-${productId}"].product-menu-item-wrapper`);
 
@@ -104,21 +104,46 @@ export async function addToCart(page: Page, productId: number): Promise<void> {
     // Full variation modal: select required options, then click "Add to Cart"
     await page.waitForTimeout(800);
 
-    // Select the first option in each required radio group
-    await page.evaluate(function () {
+    // Select options in variation groups
+    const optionNames = options || [];
+    await page.evaluate(function (names) {
       var modal = document.querySelector('app-dialog-profile-detail');
       if (!modal) return;
-      var radioGroups = modal.querySelectorAll('.RADIO.variation-list');
-      radioGroups.forEach(function (group) {
-        // Only select if nothing is already selected
-        var alreadySelected = group.querySelector('.select-mark.selected');
-        if (alreadySelected) return;
-        var firstMark = group.querySelector('app-product-item .select-mark');
-        if (firstMark) {
-          firstMark.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      var groups = modal.querySelectorAll('.variation-list');
+      groups.forEach(function (group) {
+        var isRadio = group.classList.contains('RADIO');
+        var items = group.querySelectorAll('app-product-item');
+
+        // Try to match a provided option name
+        var matched = false;
+        if (names.length > 0) {
+          items.forEach(function (item) {
+            var itemText = (item.textContent || '').trim();
+            for (var i = 0; i < names.length; i++) {
+              if (itemText.toLowerCase().includes(names[i].toLowerCase())) {
+                var mark = item.querySelector('.select-mark');
+                if (mark) {
+                  mark.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                  matched = true;
+                }
+                break;
+              }
+            }
+          });
+        }
+
+        // For required radio groups with no match, select the first option
+        if (!matched && isRadio) {
+          var alreadySelected = group.querySelector('.select-mark.selected');
+          if (!alreadySelected) {
+            var firstMark = group.querySelector('app-product-item .select-mark');
+            if (firstMark) {
+              firstMark.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            }
+          }
         }
       });
-    });
+    }, optionNames);
     await page.waitForTimeout(500);
 
     // Click "Add to Cart" button
