@@ -10,6 +10,21 @@ import type { MenuItem } from '../types.js';
  * Selectors discovered from WeBox Angular app (March 2026).
  */
 export async function extractMenuItems(page: Page): Promise<MenuItem[]> {
+  // Scroll down to load all lazy-loaded menu items
+  var prevCount = 0;
+  for (var i = 0; i < 20; i++) {
+    var currentCount = await page.evaluate(function () {
+      return document.querySelectorAll('.product-menu-item-wrapper').length;
+    });
+    if (currentCount === prevCount && i > 0) break;
+    prevCount = currentCount;
+    await page.evaluate(function () { window.scrollTo(0, document.body.scrollHeight); });
+    await page.waitForTimeout(800);
+  }
+
+  // Scroll back to top
+  await page.evaluate(function () { window.scrollTo(0, 0); });
+
   return page.evaluate(function () {
     var cards = document.querySelectorAll('.product-menu-item-wrapper');
     var items: any[] = [];
