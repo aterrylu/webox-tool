@@ -101,9 +101,27 @@ export async function addToCart(page: Page, productId: number): Promise<void> {
     await page.waitForTimeout(2000);
     await dismissOverlays(page);
   } else if (uiState === 'full-modal') {
-    // Full variation modal: click "Add to Cart" button
+    // Full variation modal: select required options, then click "Add to Cart"
     await page.waitForTimeout(800);
 
+    // Select the first option in each required radio group
+    await page.evaluate(function () {
+      var modal = document.querySelector('app-dialog-profile-detail');
+      if (!modal) return;
+      var radioGroups = modal.querySelectorAll('.RADIO.variation-list');
+      radioGroups.forEach(function (group) {
+        // Only select if nothing is already selected
+        var alreadySelected = group.querySelector('.select-mark.selected');
+        if (alreadySelected) return;
+        var firstMark = group.querySelector('app-product-item .select-mark');
+        if (firstMark) {
+          firstMark.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        }
+      });
+    });
+    await page.waitForTimeout(500);
+
+    // Click "Add to Cart" button
     const modalClicked = await page.evaluate(function () {
       var panes = document.querySelectorAll('.cdk-overlay-pane');
       for (var i = panes.length - 1; i >= 0; i--) {
