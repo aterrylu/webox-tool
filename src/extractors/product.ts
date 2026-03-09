@@ -8,19 +8,17 @@ import type { ProductDetail } from '../types.js';
  * full-screen nz-modal, NOT inside a drawer.
  */
 export async function extractProductDetail(page: Page, productId: number): Promise<ProductDetail | null> {
-  // Click the product card via evaluate — bypasses Playwright visibility checks
-  // for cards in horizontal scroll containers
-  const found = await page.evaluate(function (id) {
-    var card = document.querySelector('[id$="-' + id + '"].product-menu-item-wrapper');
-    if (card === null) return false;
-    card.scrollIntoView({ behavior: 'instant', block: 'center' });
-    var photo = card.querySelector('.product-menu-top-wrapper');
-    if (photo) (photo as HTMLElement).click();
-    else (card as HTMLElement).click();
-    return true;
-  }, productId);
+  // Click the product card to open the detail modal
+  const card = page.locator(`[id$="-${productId}"].product-menu-item-wrapper`);
+  if (await card.count() === 0) return null;
 
-  if (!found) return null;
+  await card.scrollIntoViewIfNeeded();
+  const photo = card.locator('.product-menu-top-wrapper');
+  if (await photo.count() > 0) {
+    await photo.click();
+  } else {
+    await card.click();
+  }
 
   // Wait for the Angular detail component to render inside the modal
   const detailEl = await page.waitForSelector(
@@ -173,10 +171,10 @@ export async function extractProductDetail(page: Page, productId: number): Promi
   }, productId);
 
   // Close the modal
-  await page.evaluate(function () {
-    var closeBtn = document.querySelector('.ant-modal-close');
-    if (closeBtn) (closeBtn as HTMLElement).click();
-  });
+  const closeBtn = page.locator('.ant-modal-close');
+  if (await closeBtn.count() > 0) {
+    await closeBtn.first().click();
+  }
   await page.waitForTimeout(300);
   // Fallback: press Escape
   await page.keyboard.press('Escape').catch(function () {});

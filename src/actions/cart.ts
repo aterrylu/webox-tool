@@ -5,19 +5,13 @@ import type { Page } from 'playwright';
  * WeBox shows "Planned Order Detected" dialogs, auto-order confirmations, etc.
  */
 async function dismissOverlays(page: Page): Promise<void> {
-  await page.evaluate(function () {
-    // Only look inside modal/overlay containers to avoid clicking unrelated buttons
-    var containers = document.querySelectorAll('.ant-modal, .cdk-overlay-pane, nz-modal-container');
-    containers.forEach(function (container) {
-      var buttons = container.querySelectorAll('button');
-      buttons.forEach(function (btn) {
-        var text = (btn.textContent || '').trim();
-        if (text === 'Cancel Planned' || text === 'Got it' || text === 'OK') {
-          btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        }
-      });
-    });
-  });
+  const overlays = page.locator('.ant-modal, .cdk-overlay-pane, nz-modal-container');
+  for (const text of ['Cancel Planned', 'Got it', 'OK']) {
+    const btn = overlays.locator('button', { hasText: text });
+    if (await btn.count() > 0) {
+      await btn.first().click();
+    }
+  }
   await page.waitForTimeout(500);
 }
 
@@ -35,143 +29,90 @@ async function dismissOverlays(page: Page): Promise<void> {
  * auto-order — we dismiss it automatically.
  */
 export async function addToCart(page: Page, productId: number, options?: string[]): Promise<void> {
-  // Find card by product ID
-  const card = await page.$(`[id$="-${productId}"].product-menu-item-wrapper`);
+  const card = page.locator(`[id$="-${productId}"].product-menu-item-wrapper`);
 
-  if (card === null) {
+  if (await card.count() === 0) {
     throw new Error(`Product ${productId} not found on current page`);
   }
 
   // Check if item is sold out
-  const soldOut = await card.evaluate(function (el) {
-    var wrapper = el.querySelector('.product-menu-top-sold-out-wrapper') as HTMLElement | null;
-    return wrapper ? getComputedStyle(wrapper).display !== 'none' : false;
-  });
-
-  if (soldOut) {
-    throw new Error(`Product ${productId} is sold out`);
+  const soldOutWrapper = card.locator('.product-menu-top-sold-out-wrapper');
+  if (await soldOutWrapper.count() > 0) {
+    const soldOut = await soldOutWrapper.evaluate(function (el) {
+      return getComputedStyle(el).display !== 'none';
+    });
+    if (soldOut) {
+      throw new Error(`Product ${productId} is sold out`);
+    }
   }
 
-  // Scroll card into view
-  await card.evaluate(function (el) {
-    el.scrollIntoView({ behavior: 'instant', block: 'center' });
-  });
+  await card.scrollIntoViewIfNeeded();
   await page.waitForTimeout(300);
-
-  // Dismiss any blocking overlays first
   await dismissOverlays(page);
 
-  // Click the + button via dispatchEvent (Playwright's native click doesn't
-  // trigger Angular's Zone.js-patched event listeners reliably over CDP)
-  const clicked = await page.evaluate(function (id) {
-    var card = document.querySelector('[id$="-' + id + '"].product-menu-item-wrapper');
-    if (!card) return false;
-    var btn = card.querySelector('.plus-add, .product-add-wrapper');
-    if (!btn) return false;
-    btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    return true;
-  }, productId);
-
-  if (!clicked) {
-    throw new Error(`Add button not found for product ${productId}`);
-  }
-
+  // Click the + button
+  const addBtn = card.locator('.plus-add, .product-add-wrapper');
+  await addBtn.click();
   await page.waitForTimeout(1500);
-
-  // Check if a "Planned Order Detected" dialog appeared
   await dismissOverlays(page);
 
   // Check which UI appeared after clicking +
-  const uiState = await page.evaluate(function () {
-    var portionBox = document.querySelector('.portion-select-box.show');
-    if (portionBox) return 'portion-picker';
-    var modal = document.querySelector('app-dialog-profile-detail');
-    if (modal) return 'full-modal';
-    return 'direct-add';
-  });
+  const portionBox = page.locator('.portion-select-box.show');
+  const modal = page.locator('app-dialog-profile-detail');
 
-  if (uiState === 'portion-picker') {
+  if (await portionBox.count() > 0) {
     // Portion picker: default portion is pre-selected, click + in the picker
-    await page.evaluate(function () {
-      var box = document.querySelector('.portion-select-box.show');
-      if (!box) return;
-      var btn = box.querySelector('.portion-select-bottom .plus-add');
-      if (btn) btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    });
+    await portionBox.locator('.portion-select-bottom .plus-add').click();
     await page.waitForTimeout(2000);
     await dismissOverlays(page);
-  } else if (uiState === 'full-modal') {
+  } else if (await modal.count() > 0) {
     // Full variation modal: select required options, then click "Add to Cart"
     await page.waitForTimeout(800);
 
-    // Select options in variation groups
     const optionNames = options || [];
-    const selectResult = await page.evaluate(function (names) {
-      var modal = document.querySelector('app-dialog-profile-detail');
-      if (!modal) return 'no modal';
-      var groups = modal.querySelectorAll('.variation-list');
-      var error = '';
-      for (var g = 0; g < groups.length; g++) {
-        var group = groups[g];
-        var isRadio = group.classList.contains('RADIO');
-        var items = group.querySelectorAll('app-product-item');
+    const groups = modal.locator('.variation-list');
+    const groupCount = await groups.count();
 
-        // Try to match a provided option name
-        var matched = false;
-        if (names.length > 0) {
-          items.forEach(function (item) {
-            var itemText = (item.textContent || '').trim();
-            for (var i = 0; i < names.length; i++) {
-              if (itemText.toLowerCase().includes(names[i].toLowerCase())) {
-                var mark = item.querySelector('.select-mark');
-                if (mark) {
-                  mark.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                  matched = true;
-                }
-                break;
-              }
-            }
-          });
-        }
+    for (let g = 0; g < groupCount; g++) {
+      const group = groups.nth(g);
+      const isRadio = await group.evaluate(function (el) {
+        return el.classList.contains('RADIO');
+      });
+      const items = group.locator('app-product-item');
 
-        // Required radio group with nothing selected = error
-        if (!matched && isRadio) {
-          var alreadySelected = group.querySelector('.select-mark.selected');
-          if (!alreadySelected) {
-            var availableNames: string[] = [];
-            items.forEach(function (item) {
-              availableNames.push((item.textContent || '').trim());
-            });
-            error = 'Required option not provided. Use --options with one of: ' + availableNames.join(', ');
-          }
+      // Try to match a provided option name
+      let matched = false;
+      for (const optName of optionNames) {
+        const matchingItem = items.filter({ hasText: new RegExp(optName, 'i') });
+        if (await matchingItem.count() > 0) {
+          await matchingItem.first().locator('.select-mark').click();
+          matched = true;
+          break;
         }
       }
-      return error || 'ok';
-    }, optionNames);
 
-    if (selectResult !== 'ok') {
-      await page.keyboard.press('Escape').catch(function () {});
-      throw new Error(selectResult);
+      // Required radio group with nothing selected = error
+      if (!matched && isRadio) {
+        const alreadySelected = group.locator('.select-mark.selected');
+        if (await alreadySelected.count() === 0) {
+          const itemCount = await items.count();
+          const names: string[] = [];
+          for (let i = 0; i < itemCount; i++) {
+            const text = await items.nth(i).textContent();
+            names.push((text || '').trim());
+          }
+          await page.keyboard.press('Escape').catch(function () {});
+          throw new Error('Required option not provided. Use --options with one of: ' + names.join(', '));
+        }
+      }
     }
+
     await page.waitForTimeout(500);
 
     // Click "Add to Cart" button
-    const modalClicked = await page.evaluate(function () {
-      var panes = document.querySelectorAll('.cdk-overlay-pane');
-      for (var i = panes.length - 1; i >= 0; i--) {
-        var pd = panes[i].querySelector('app-dialog-profile-detail');
-        if (pd) {
-          var btn = pd.querySelector('st-button.add-button');
-          if (btn) {
-            btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-            return true;
-          }
-        }
-      }
-      return false;
-    });
-
-    if (modalClicked) {
+    const addCartBtn = modal.locator('st-button.add-button');
+    if (await addCartBtn.count() > 0) {
+      await addCartBtn.click();
       await page.waitForTimeout(2000);
       await dismissOverlays(page);
     } else {
@@ -189,60 +130,76 @@ export async function addToCart(page: Page, productId: number, options?: string[
 }
 
 /**
- * Remove an item from the cart by its index.
+ * Remove an item from the cart by its index (from the `cart` command output).
  *
- * Clicks the minus button in the cart sidebar. If quantity is 1,
- * a confirmation dialog ("Are you sure to delete this item?") appears
- * which we auto-confirm.
+ * The cart extractor indexes items sequentially across all date/meal carts
+ * from localStorage. To click the right UI element, we:
+ * 1. Look up the item's name, date, and meal from localStorage.
+ * 2. Navigate to that date/meal page so the sidebar shows the right items.
+ * 3. Find the item by name in the sidebar and click its minus button.
  */
 export async function removeFromCart(page: Page, index: number): Promise<void> {
-  // Find the minus button for the cart item in the sidebar
-  const removed = await page.evaluate(function (idx) {
-    var sidebar = document.querySelector('app-b2b-cart-items');
-    if (sidebar === null) return 'no sidebar';
-
-    // Each cart item has an input-number-wrapper with minus/plus buttons
-    var inputWrappers = sidebar.querySelectorAll('.input-number-wrapper');
-    if (inputWrappers.length === 0) return 'no items';
-    if (idx < 0 || idx >= inputWrappers.length) return 'out of range: ' + inputWrappers.length;
-
-    var wrapper = inputWrappers[idx];
-    var minusBtn = wrapper.querySelector('.btn.minus');
-    if (minusBtn) {
-      minusBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-      return 'clicked';
+  // Step 1: Look up item details from localStorage (same source as cart extractor)
+  const itemInfo = await page.evaluate(function (idx) {
+    var raw = localStorage.getItem('CartService_cartItemArrMap');
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    var carts = parsed.value || [];
+    var flatIndex = 0;
+    for (var c = 0; c < carts.length; c++) {
+      var cart = carts[c];
+      var cartItems = cart.cartItems || [];
+      for (var i = 0; i < cartItems.length; i++) {
+        if (flatIndex === idx) {
+          return {
+            name: cartItems[i].productSpecial?.extProduct?.extName?.enUs
+              || cartItems[i].product?.extName?.enUs
+              || cartItems[i].productName
+              || null,
+            date: cart.dateShipping || '',
+            meal: (cart.shippingTimeSection?.timeShipping || '').toLowerCase(),
+          };
+        }
+        flatIndex++;
+      }
     }
-    return 'no minus button';
+    return null;
   }, index);
 
-  if (removed === 'no sidebar') {
-    throw new Error('Cart sidebar not found');
-  }
-  if (removed === 'no items') {
-    throw new Error('No items in cart');
-  }
-  if (removed.startsWith('out of range')) {
-    throw new Error(`Cart item index ${index} out of range (${removed})`);
-  }
-  if (removed === 'no minus button') {
-    throw new Error(`Minus button not found for cart item ${index}`);
+  if (itemInfo === null || itemInfo.name === null) {
+    throw new Error(`Cart item index ${index} not found in cart data`);
   }
 
+  // Step 2: Navigate to the item's date/meal so sidebar shows the right section
+  if (itemInfo.date && itemInfo.meal) {
+    const shippingTime = itemInfo.meal === 'lunch' ? 'Lunch' : 'Dinner';
+    const url = `https://www.webox.com/?date=${itemInfo.date}&shippingTime=${shippingTime}`;
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(2000);
+  }
+
+  await dismissOverlays(page);
+
+  // Step 3: Find the item by name in the sidebar and click minus
+  const sidebar = page.locator('app-b2b-cart-items');
+  const cartItem = sidebar.locator('app-b2b-cart-item').filter({ hasText: itemInfo.name });
+
+  if (await cartItem.count() === 0) {
+    throw new Error(`Could not find "${itemInfo.name}" in cart sidebar`);
+  }
+
+  const minusBtn = cartItem.first().locator('.btn.minus');
+  if (await minusBtn.count() === 0) {
+    throw new Error(`Minus button not found for "${itemInfo.name}"`);
+  }
+  await minusBtn.click();
   await page.waitForTimeout(500);
 
   // Handle "Are you sure to delete this item?" confirmation dialog
-  await page.evaluate(function () {
-    var containers = document.querySelectorAll('.ant-modal, .cdk-overlay-pane, nz-modal-container');
-    containers.forEach(function (container) {
-      var buttons = container.querySelectorAll('button');
-      buttons.forEach(function (btn) {
-        var text = (btn.textContent || '').trim();
-        if (text === 'Remove') {
-          btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        }
-      });
-    });
-  });
+  const removeBtn = page.locator('.ant-modal button, .cdk-overlay-pane button, nz-modal-container button', { hasText: 'Remove' });
+  if (await removeBtn.count() > 0) {
+    await removeBtn.first().click();
+  }
 
   await page.waitForTimeout(1000);
 }
