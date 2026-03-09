@@ -90,16 +90,22 @@ export class WeboxClient {
 
   async addToCart(id: number, date: string, meal: 'lunch' | 'dinner', options?: string[]): Promise<Cart> {
     const page = await this.session.navigate(date, meal);
-    // Scroll to load all lazy-loaded items (same as menu extractor)
-    let prevCount = 0;
-    for (let i = 0; i < 20; i++) {
-      const currentCount = await page.evaluate(() => document.querySelectorAll('.product-menu-item-wrapper').length);
-      if (currentCount === prevCount && i > 0) break;
-      prevCount = currentCount;
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await page.waitForTimeout(800);
+    // Virtual scroll: scroll until the target product card is in the DOM
+    await page.evaluate(function () { window.scrollTo(0, 0); });
+    await page.waitForTimeout(500);
+    for (let i = 0; i < 50; i++) {
+      const found = await page.evaluate(function (pid) {
+        return document.querySelector('[id$="-' + pid + '"].product-menu-item-wrapper') !== null;
+      }, id);
+      if (found) break;
+      const scrolled = await page.evaluate(function () {
+        var before = window.scrollY;
+        window.scrollBy(0, window.innerHeight);
+        return window.scrollY > before;
+      });
+      if (!scrolled) break;
+      await page.waitForTimeout(400);
     }
-    await page.evaluate(() => window.scrollTo(0, 0));
     try {
       await addToCart(page, id, options);
     } catch (err) {
