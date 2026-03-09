@@ -106,11 +106,13 @@ export async function addToCart(page: Page, productId: number, options?: string[
 
     // Select options in variation groups
     const optionNames = options || [];
-    await page.evaluate(function (names) {
+    const selectResult = await page.evaluate(function (names) {
       var modal = document.querySelector('app-dialog-profile-detail');
-      if (!modal) return;
+      if (!modal) return 'no modal';
       var groups = modal.querySelectorAll('.variation-list');
-      groups.forEach(function (group) {
+      var error = '';
+      for (var g = 0; g < groups.length; g++) {
+        var group = groups[g];
         var isRadio = group.classList.contains('RADIO');
         var items = group.querySelectorAll('app-product-item');
 
@@ -132,18 +134,25 @@ export async function addToCart(page: Page, productId: number, options?: string[
           });
         }
 
-        // For required radio groups with no match, select the first option
+        // Required radio group with nothing selected = error
         if (!matched && isRadio) {
           var alreadySelected = group.querySelector('.select-mark.selected');
           if (!alreadySelected) {
-            var firstMark = group.querySelector('app-product-item .select-mark');
-            if (firstMark) {
-              firstMark.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-            }
+            var availableNames: string[] = [];
+            items.forEach(function (item) {
+              availableNames.push((item.textContent || '').trim());
+            });
+            error = 'Required option not provided. Use --options with one of: ' + availableNames.join(', ');
           }
         }
-      });
+      }
+      return error || 'ok';
     }, optionNames);
+
+    if (selectResult !== 'ok') {
+      await page.keyboard.press('Escape').catch(function () {});
+      throw new Error(selectResult);
+    }
     await page.waitForTimeout(500);
 
     // Click "Add to Cart" button

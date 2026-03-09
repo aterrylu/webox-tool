@@ -34,7 +34,7 @@ npx tsx src/cli.ts orders [--days N]          # default: last 14 days
 ### Cart (safe — no checkout)
 ```bash
 npx tsx src/cli.ts cart
-npx tsx src/cli.ts add --id PRODUCT_ID --date YYYY-MM-DD [--meal lunch|dinner]
+npx tsx src/cli.ts add --id PRODUCT_ID --date YYYY-MM-DD [--meal lunch|dinner] [--options "option1,option2"]
 npx tsx src/cli.ts remove --index N
 ```
 
@@ -63,4 +63,5 @@ Cart items: `[index] Name (portion) xQty — $Price`
 - Dates: must be a future weekday
 - Rating: 0-5 scale (★4.0+ is good)
 - Items may have portions (e.g., 5PCS / 10 PCS) — add command picks the default
+- Items marked `[options]` have required choices (e.g., protein). Use `details --id` to see options, then `add --options "Pollo Asado"` to select. The add command will fail if required options are not provided.
 - Never auto-checkout — always confirm cart with user first
