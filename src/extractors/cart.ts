@@ -10,7 +10,7 @@ import type { Cart } from '../types.js';
 export async function extractCart(page: Page): Promise<Cart> {
   return page.evaluate(function () {
     var raw = localStorage.getItem('CartService_cartItemArrMap');
-    if (raw === null || raw === '') return { items: [], total: 0, budget: 0, remaining: 0 };
+    if (raw === null || raw === '') return { items: [], total: 0, budget: 0, remaining: 0, budgetKnown: false };
 
     try {
       var parsed = JSON.parse(raw);
@@ -49,14 +49,46 @@ export async function extractCart(page: Page): Promise<Cart> {
         });
       });
 
+      // Extract budget from B2B budget schedules in UserService_user
+      var budget = 0;
+      var userRaw = localStorage.getItem('UserService_user');
+      var schedules: any[] = [];
+      if (userRaw) {
+        try {
+          var userData = JSON.parse(userRaw);
+          var userVal = userData.value || userData;
+          var company = userVal.extB2BCompany;
+          var useTeam = company?.extOption?.budgetScheduleControlledByTeam;
+          schedules = (useTeam ? userVal.extB2BTeam?.extBudgetSchedules : company?.extBudgetSchedules) || [];
+        } catch { /* ignore */ }
+      }
+
+      var weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      carts.forEach(function (cart: any) {
+        var dateStr = cart.dateShipping;
+        var cartMeal = (cart.shippingTimeSection?.timeShipping || '').toLowerCase();
+        if (dateStr && schedules.length > 0) {
+          // Parse as local date to avoid UTC timezone shift
+          var parts = dateStr.split('-');
+          var localDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          var dayOfWeek = weekdays[localDate.getDay()];
+          var schedule = schedules.find(function (s: any) { return s.weekday === dayOfWeek; });
+          if (schedule) {
+            var mealBudget = cartMeal === 'lunch' ? schedule.lunchBudget : schedule.dinnerBudget;
+            budget += (mealBudget?.amount || 0);
+          }
+        }
+      });
+
       return {
         items: items,
         total: total,
-        budget: 20 * carts.length,
-        remaining: (20 * carts.length) - total,
+        budget: budget,
+        remaining: budget > 0 ? budget - total : 0,
+        budgetKnown: budget > 0,
       };
     } catch {
-      return { items: [], total: 0, budget: 0, remaining: 0 };
+      return { items: [], total: 0, budget: 0, remaining: 0, budgetKnown: false };
     }
   });
 }

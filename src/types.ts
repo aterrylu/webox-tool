@@ -30,6 +30,7 @@ export interface Cart {
   total: number;
   budget: number;
   remaining: number;
+  budgetKnown: boolean;
 }
 
 export interface Brand {

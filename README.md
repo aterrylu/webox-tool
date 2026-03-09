@@ -39,12 +39,19 @@ npm install
 
 ## Prerequisites
 
-The agent (or user) must:
-1. Open Chrome with CDP enabled: `chrome --remote-debugging-port=56137`
-2. Navigate to https://www.webox.com
-3. Log in
+**First run:** The tool auto-launches Chrome with CDP when no browser is detected. Just run any command:
 
-Then webox-tool connects to that browser session.
+```bash
+npx tsx src/cli.ts status
+# → Launches Chrome, prints "log in to webox.com in the browser window"
+```
+
+Log in to WeBox in the browser that opens. Cookies are saved in `~/.webox-tool/chrome-profile/`, so you only log in once.
+
+**Already have Chrome with CDP?** The tool auto-detects it, or you can specify:
+```bash
+npx tsx src/cli.ts --cdp 56137 status
+```
 
 ## Commands
 
@@ -135,7 +142,7 @@ The tool detects which flow appeared and handles it automatically.
 - **URL:** https://www.webox.com
 - **Framework:** Angular SPA (ng-zorro, CDK overlays)
 - **Menu URL:** `/?date=YYYY-MM-DD&shippingTime=Lunch|Dinner`
-- **Budget:** $20/meal (lunch and dinner are separate budgets)
+- **Budget:** varies per company/user (extracted from cart data)
 - **Cart storage:** localStorage key `CartService_cartItemArrMap`
 - **Products have:** id, name (EN + ZH), price, rating (0-5), brand, portions/options, dietary info, ingredients, allergens
 

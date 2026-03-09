@@ -4,17 +4,16 @@ Browser automation CLI for ordering food on WeBox. Connects to an agent-managed 
 
 ## Setup
 
-The agent must have a Chrome browser running with CDP enabled and WeBox logged in.
-
 ```bash
 cd /path/to/webox-tool && npm install
-npx tsx src/cli.ts status   # Verify connection and login
+npx tsx src/cli.ts status   # Auto-launches Chrome if needed
 ```
 
-**CDP connection** (auto-detects from running Chrome, or specify explicitly):
+On first run, Chrome opens automatically. Log in to webox.com in the browser window — cookies are saved for future sessions.
+
+**If you already have Chrome with CDP running:**
 ```bash
 npx tsx src/cli.ts --cdp 56137 status       # by port
-npx tsx src/cli.ts --cdp http://localhost:56137 status  # by URL
 WEBOX_CDP_PORT=56137 npx tsx src/cli.ts status          # env var
 ```
 
@@ -56,7 +55,7 @@ Cart items: `[index] Name (portion) xQty — $Price`
 
 ## Domain Knowledge
 
-- Budget: $20/meal (lunch and dinner are separate budgets)
+- Budget: varies per company/user (check `cart` command for actual budget and remaining)
 - Meals: lunch, dinner (each has different menu items)
 - Dates: must be a future weekday
 - Rating: 0-5 scale (★4.0+ is good)

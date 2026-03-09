@@ -1,8 +1,13 @@
 import { chromium, type Browser, type Page } from 'playwright';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
+import { existsSync, mkdirSync } from 'fs';
+import { homedir } from 'os';
+import { resolve } from 'path';
 import type { ConnectionConfig } from '../types.js';
 
 const WEBOX_URL_PATTERN = /webox\.com/;
+const DEFAULT_CDP_PORT = 9222;
+const CHROME_PROFILE_DIR = resolve(homedir(), '.webox-tool', 'chrome-profile');
 
 /**
  * Connects to an already-running browser via CDP.
@@ -29,8 +34,9 @@ export class BrowserSession {
    * 2. Explicit port from config
    * 3. WEBOX_CDP_PORT env var
    * 4. Auto-detect from running Chrome processes
+   * 5. Auto-launch Chrome with CDP
    */
-  private getCdpEndpoint(): string {
+  private async getCdpEndpoint(): Promise<string> {
     if (this.config.cdpEndpoint) return this.config.cdpEndpoint;
     if (this.config.cdpPort) return `http://localhost:${this.config.cdpPort}`;
 
@@ -41,12 +47,10 @@ export class BrowserSession {
     const detected = this.detectCdpPort();
     if (detected) return `http://localhost:${detected}`;
 
-    throw new Error(
-      'No CDP endpoint found. Either:\n' +
-      '  1. Pass --cdp <port> to the CLI\n' +
-      '  2. Set WEBOX_CDP_PORT env var\n' +
-      '  3. Make sure the agent has a Chrome browser running with CDP enabled'
-    );
+    // No browser found — launch one
+    const port = this.launchChrome();
+    await this.waitForCdpReady(port);
+    return `http://localhost:${port}`;
   }
 
   /**
@@ -70,23 +74,14 @@ export class BrowserSession {
   }
 
   async connect(): Promise<Page> {
-    const endpoint = this.getCdpEndpoint();
+    const endpoint = await this.getCdpEndpoint();
     this.browser = await chromium.connectOverCDP(endpoint);
 
-    const page = this.findWeboxPage();
-    if (page) {
-      this.page = page;
-      return this.page;
-    }
+    const weboxPage = this.findWeboxPage();
+    const fallbackPage = this.browser.contexts().flatMap(c => c.pages())[0];
+    this.page = weboxPage ?? fallbackPage ?? null;
 
-    // No webox tab yet — find any open tab so the agent can navigate
-    for (const context of this.browser.contexts()) {
-      const pages = context.pages();
-      if (pages.length > 0) {
-        this.page = pages[0];
-        return this.page;
-      }
-    }
+    if (this.page) return this.page;
 
     throw new Error(
       `Connected to browser at ${endpoint} but no tabs found.\n` +
@@ -100,14 +95,9 @@ export class BrowserSession {
   private findWeboxPage(): Page | null {
     if (this.browser === null) return null;
 
-    for (const context of this.browser.contexts()) {
-      for (const page of context.pages()) {
-        if (WEBOX_URL_PATTERN.test(page.url())) {
-          return page;
-        }
-      }
-    }
-    return null;
+    return this.browser.contexts()
+      .flatMap(c => c.pages())
+      .find(p => WEBOX_URL_PATTERN.test(p.url())) ?? null;
   }
 
   async getPage(): Promise<Page> {
@@ -152,6 +142,67 @@ export class BrowserSession {
       var hasMenu = document.querySelector('app-new-menu, app-menu') !== null;
       return hasAvatar || hasAddress || hasMenu;
     });
+  }
+
+  /**
+   * Launch Chrome as a detached process with CDP enabled.
+   * The browser persists after the CLI process exits.
+   */
+  private launchChrome(): number {
+    const chromePath = this.findChromeBinary();
+    mkdirSync(CHROME_PROFILE_DIR, { recursive: true });
+
+    const child = spawn(chromePath, [
+      `--remote-debugging-port=${DEFAULT_CDP_PORT}`,
+      `--user-data-dir=${CHROME_PROFILE_DIR}`,
+      '--no-first-run',
+      '--no-default-browser-check',
+    ], {
+      detached: true,
+      stdio: 'ignore',
+    });
+
+    child.unref();
+
+    console.error(
+      `Launched Chrome with CDP on port ${DEFAULT_CDP_PORT}.\n` +
+      'If this is your first run, log in to webox.com in the browser window.'
+    );
+
+    return DEFAULT_CDP_PORT;
+  }
+
+  private findChromeBinary(): string {
+    if (process.platform === 'darwin') {
+      const path = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+      if (existsSync(path)) return path;
+      throw new Error('Chrome not found. Install Google Chrome or pass --cdp <port> to connect to an existing browser.');
+    }
+
+    // Linux: try common binary names
+    for (const bin of ['google-chrome', 'chromium-browser', 'chromium']) {
+      try {
+        execFileSync('which', [bin], { encoding: 'utf-8', timeout: 2000 });
+        return bin;
+      } catch { /* try next */ }
+    }
+
+    throw new Error('Chrome/Chromium not found. Install Chrome or pass --cdp <port> to connect to an existing browser.');
+  }
+
+  private async waitForCdpReady(port: number, timeoutMs = 8000): Promise<void> {
+    const start = Date.now();
+    const url = `http://localhost:${port}/json/version`;
+
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const res = await fetch(url);
+        if (res.ok) return;
+      } catch { /* not ready yet */ }
+      await new Promise(function (r) { setTimeout(r, 300); });
+    }
+
+    throw new Error(`Chrome did not become ready on port ${port} within ${timeoutMs / 1000}s.`);
   }
 
   async disconnect(): Promise<void> {

@@ -43,7 +43,11 @@ export function formatCart(cart: Cart): string {
   }
 
   lines.push('');
-  lines.push(`  💰 Total: $${cart.total.toFixed(2)} | Budget: $${cart.budget.toFixed(2)} | Remaining: $${cart.remaining.toFixed(2)}`);
+  if (cart.budgetKnown) {
+    lines.push(`  💰 Total: $${cart.total.toFixed(2)} | Budget: $${cart.budget.toFixed(2)} | Remaining: $${cart.remaining.toFixed(2)}`);
+  } else {
+    lines.push(`  💰 Total: $${cart.total.toFixed(2)} | Budget: unknown`);
+  }
 
   return lines.join('\n');
 }
@@ -87,7 +91,7 @@ export function formatProductDetail(product: ProductDetail): string {
     lines.push(`   🧾 Ingredients: ${product.ingredients}`);
   }
 
-  if (product.allergens && product.allergens.length > 0) {
+  if (product.allergens?.length) {
     lines.push(`   ⚠️  Allergens: ${product.allergens.join(', ')}`);
   }
 
