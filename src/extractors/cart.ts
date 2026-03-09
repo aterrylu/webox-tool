@@ -3,47 +3,56 @@ import type { Cart } from '../types.js';
 
 /**
  * Extract cart contents.
- * 
+ *
  * WeBox stores cart data in localStorage (key: CartService_cartItemArrMap).
- * This is more reliable than scraping DOM.
+ * This is more reliable than scraping the cart DOM.
  */
 export async function extractCart(page: Page): Promise<Cart> {
-  return page.evaluate(() => {
-    const raw = localStorage.getItem('CartService_cartItemArrMap');
-    if (!raw) return { items: [], total: 0, budget: 0, remaining: 0 };
+  return page.evaluate(function () {
+    var raw = localStorage.getItem('CartService_cartItemArrMap');
+    if (raw === null || raw === '') return { items: [], total: 0, budget: 0, remaining: 0 };
 
     try {
-      const parsed = JSON.parse(raw);
-      const carts = parsed.value || [];
-      const items: any[] = [];
-      let total = 0;
+      var parsed = JSON.parse(raw);
+      var carts = parsed.value || [];
+      var items: any[] = [];
+      var total = 0;
 
-      carts.forEach((cart: any, cartIdx: number) => {
-        const date = cart.dateShipping || '?';
-        const meal = cart.shippingTimeSection?.timeShipping?.toLowerCase() || '?';
-        const cartItems = cart.cartItems || [];
+      carts.forEach(function (cart: any) {
+        var date = cart.dateShipping || '?';
+        var meal = cart.shippingTimeSection?.timeShipping?.toLowerCase() || '?';
+        var cartItems = cart.cartItems || [];
 
-        cartItems.forEach((item: any, itemIdx: number) => {
-          const price = item.price || 0;
-          const qty = item.quantity || 1;
+        cartItems.forEach(function (item: any) {
+          var price = item.productSpecial?.price || item.price || 0;
+          var qty = item.count || item.quantity || 1;
           total += price * qty;
+
+          var name = item.productSpecial?.extProduct?.extName?.enUs
+            || item.product?.extName?.enUs
+            || item.productName
+            || '?';
+
+          var portion = item.productPortion?.extName?.enUs
+            || item.portionName
+            || null;
 
           items.push({
             index: items.length,
-            name: item.product?.extName?.enUs || item.productName || '?',
-            price,
+            name: name,
+            price: price,
             quantity: qty,
-            date,
-            meal,
-            customization: item.portionName || null,
+            date: date,
+            meal: meal,
+            customization: portion,
           });
         });
       });
 
       return {
-        items,
-        total,
-        budget: 20 * carts.length, // $20 per meal
+        items: items,
+        total: total,
+        budget: 20 * carts.length,
         remaining: (20 * carts.length) - total,
       };
     } catch {

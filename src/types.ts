@@ -4,13 +4,15 @@ export interface MenuItem {
   nameZh?: string;
   brand: string;
   price: number;
-  rating: number;       // 0-5 scale (converted from WeBox 0-10)
+  rating: number;       // 0-5 scale
   reviewCount: number;
   salesCount: number;
   mealAvailability: ('lunch' | 'dinner')[];
   hasCustomization: boolean;
   portionCount: number;
   category?: string;
+  soldOut?: boolean;
+  dietary?: string[];   // e.g. ['vegetarian', 'mild', 'spicy']
 }
 
 export interface CartItem {
@@ -45,10 +47,13 @@ export interface ProductDetail extends MenuItem {
     isDefault: boolean;
   }[];
   dietary: string[];
+  ingredients?: string;
+  allergens?: string[];
 }
 
-export interface BrowserConfig {
-  dataDir: string;
-  headless: boolean;
-  addressId: string;
+export interface ConnectionConfig {
+  /** CDP endpoint URL (e.g. http://localhost:9222) */
+  cdpEndpoint?: string;
+  /** CDP port — shorthand for http://localhost:<port> */
+  cdpPort?: number;
 }

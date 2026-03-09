@@ -13,9 +13,9 @@ AI agents waste massive tokens when browsing food ordering sites via DOM snapsho
 ```
 Agent (Claude/GPT/etc)
   ↓ CLI call
-webox-tool menu --date 2026-03-10 --meal lunch
-  ↓ Playwright
-Browser (persistent session, saved cookies)
+npx tsx src/cli.ts menu --date 2026-03-10 --meal lunch
+  ↓ Playwright (CDP)
+Agent's Chrome browser (already open, logged into WeBox)
   ↓ page.evaluate()
 Targeted JS extractor (returns structured JSON)
   ↓
@@ -23,65 +23,75 @@ Compact text output (one line per item)
 ```
 
 **Key design choices:**
-- **Playwright, not API scraping** — interact with the real site like a user. No reverse-engineering.
-- **Targeted JS extraction** — `page.evaluate()` returns minimal structured JSON, not full DOM.
-- **Persistent browser session** — cookies/auth survive between calls.
-- **AI-agent-friendly output** — compact, parseable, low-token text.
+- **CDP attachment** — connects to the agent's already-running Chrome browser (no login flow needed)
+- **Targeted JS extraction** — `page.evaluate()` returns minimal structured JSON, not full DOM
+- **dispatchEvent for Angular** — uses DOM `dispatchEvent()` instead of Playwright's `.click()` to trigger Angular Zone.js event handlers reliably over CDP
+- **AI-agent-friendly output** — compact, parseable, low-token text
 - **Safe** — never auto-checkouts. Cart operations only.
 
 ## Installation
 
 ```bash
-# Clone
 git clone https://github.com/nox-0x/webox-tool.git
 cd webox-tool
-
-# Install
 npm install
-
-# First run — opens visible browser for manual login
-npx webox login
-
-# Subsequent runs use saved session (headless)
-npx webox menu --date 2026-03-10 --meal lunch
 ```
+
+## Prerequisites
+
+The agent (or user) must:
+1. Open Chrome with CDP enabled: `chrome --remote-debugging-port=56137`
+2. Navigate to https://www.webox.com
+3. Log in
+
+Then webox-tool connects to that browser session.
 
 ## Commands
 
 ```bash
-# Login / session management
-webox login                    # Open browser for manual login
-webox status                   # Check if session is valid
+# Check connection and login
+npx tsx src/cli.ts status
 
 # Browse menu
-webox menu --date 2026-03-10 --meal lunch [--limit 30]
-webox menu --date 2026-03-10 --meal dinner --search "wings"
-webox menu --date 2026-03-10 --category "dim sum"
+npx tsx src/cli.ts menu --date 2026-03-10 --meal lunch [--limit 30]
+npx tsx src/cli.ts menu --date 2026-03-10 --meal dinner --search "wings"
 
-# Product details
-webox details --id 186386
+# Product details (portions, ingredients, allergens)
+npx tsx src/cli.ts details --id 48020540 --date 2026-03-10
+
+# Order history (preference learning)
+npx tsx src/cli.ts orders --days 14
 
 # Cart operations
-webox cart                     # View current cart
-webox add --date 2026-03-10 --meal lunch --id 186386
-webox remove --index 3         # Remove by position
+npx tsx src/cli.ts cart
+npx tsx src/cli.ts add --date 2026-03-10 --meal lunch --id 48020540
+npx tsx src/cli.ts remove --index 0
 
 # Restaurants
-webox brands --date 2026-03-10
+npx tsx src/cli.ts brands --date 2026-03-10
+```
+
+### CDP Connection
+
+Auto-detects from running Chrome processes, or specify explicitly:
+```bash
+npx tsx src/cli.ts --cdp 56137 menu --date 2026-03-10 --meal lunch
+WEBOX_CDP_PORT=56137 npx tsx src/cli.ts status
 ```
 
 ## Output Format
 
-Designed for AI agents — compact, one line per item, machine-parseable:
+Designed for AI agents — compact, one line per item:
 
 ```
-📋 Menu for 2026-03-10 Lunch | 30 items
-[186386] Three-BBQ Combo Rice — Superstar | $18.45 | ★4.5 (14r) | [L+D]
-[117399] Black Mushroom Sumai — Green Garden | $7.45 | ★4.8 (23r) | [L]
-[187529] 6pc Chicken Wings — Wings Circle | $11.45 | ★4.5 (1r) | [L+D]
+📋 Menu for 2026-03-10 lunch | 5 items
+
+[48020540] Achari Wings — Curry Pizza House | $9.45 | ★5.0 (1r) (mild)
+[48204736] Chicken Katsu Plate — Akita Sushi | $14.45 | ★4.4 (16r)
+[49101562] La Colombe Vanilla Draft Latte — WeBox Beverage | $3.45 (vegetarian)
 ```
 
-Format: `[product_id] Name — Brand | $Price | ★Rating (reviews) | [Meal availability]`
+Format: `[product_id] Name — Brand | $Price | ★Rating (reviews) [options] (dietary)`
 
 ## How It Works
 
@@ -92,14 +102,16 @@ Instead of capturing full page DOM/screenshots, each page type has a targeted JS
 ```typescript
 // Runs inside page.evaluate() — returns only what we need
 function extractMenuItems(): MenuItem[] {
-  const cards = document.querySelectorAll('[product-card-selector]');
-  return Array.from(cards).map(card => ({
-    id: /* extract product id */,
-    name: /* extract name */,
-    price: /* extract price */,
-    rating: /* extract rating */,
-    brand: /* extract brand */,
-  }));
+  var cards = document.querySelectorAll('.product-menu-item-wrapper');
+  return Array.from(cards).map(function (card) {
+    return {
+      id: /* from element ID */,
+      name: /* from .product-name */,
+      price: /* from .product-price */,
+      rating: /* from .product-rate-star */,
+      brand: /* from .brand-name */,
+    };
+  });
 }
 ```
 
@@ -108,41 +120,24 @@ This means:
 - Agents can browse menus, compare items, and build carts efficiently
 - Multiple queries per conversation without blowing context
 
-### Session Management
+### Add-to-Cart Flows
 
-```
-~/.webox-tool/
-├── browser-data/          # Playwright persistent context (cookies, localStorage)
-├── config.json            # Address ID, preferences
-└── cache/                 # Optional menu cache (TTL: 1 hour)
-```
+WeBox has three different flows when clicking the + button:
 
-First run opens a visible browser — you log in manually. Cookies persist for subsequent headless runs. If session expires, the tool detects it and prompts for re-login.
+1. **Simple items** — adds directly to cart (no popup)
+2. **Portion picker** — small inline popup (`.portion-select-box`) for choosing size, then + to confirm
+3. **Full variation modal** — `app-dialog-profile-detail` for complex items with many options
+
+The tool detects which flow appeared and handles it automatically.
 
 ## WeBox Site Details
 
 - **URL:** https://www.webox.com
-- **Framework:** Angular SPA
-- **Auth:** Email/password login, JWT stored in `X-Auth-Token` cookie
+- **Framework:** Angular SPA (ng-zorro, CDK overlays)
 - **Menu URL:** `/?date=YYYY-MM-DD&shippingTime=Lunch|Dinner`
 - **Budget:** $20/meal (lunch and dinner are separate budgets)
-- **Products have:** id, name (EN + ZH), price, rating (0-10 scale), brand, portions/options, dietary info
-
-## OpenClaw Skill Integration
-
-This tool is designed to work as an [OpenClaw skill](https://docs.openclaw.ai). Add to your workspace:
-
-```bash
-# In your OpenClaw workspace
-cd ~/.openclaw/workspace/tools/
-git clone https://github.com/nox-0x/webox-tool.git
-cd webox-tool && npm install
-```
-
-Then your AI agent can call it directly:
-```bash
-npx webox menu --date 2026-03-10 --meal lunch --search "bento" --limit 10
-```
+- **Cart storage:** localStorage key `CartService_cartItemArrMap`
+- **Products have:** id, name (EN + ZH), price, rating (0-5), brand, portions/options, dietary info, ingredients, allergens
 
 ## Project Structure
 
@@ -152,22 +147,21 @@ webox-tool/
 ├── tsconfig.json
 ├── src/
 │   ├── cli.ts              # CLI entry point (commander.js)
-│   ├── browser.ts          # Browser session manager
+│   ├── core/
+│   │   ├── browser.ts      # CDP browser session manager
+│   │   └── webox.ts        # High-level client (orchestrates extractors + actions)
 │   ├── extractors/
 │   │   ├── menu.ts         # Menu page extractor
-│   │   ├── cart.ts         # Cart extractor
-│   │   ├── product.ts      # Product detail extractor
-│   │   └── brands.ts       # Brand list extractor
+│   │   ├── cart.ts         # Cart extractor (localStorage)
+│   │   ├── product.ts      # Product detail extractor (modal)
+│   │   ├── brands.ts       # Brand list extractor
+│   │   └── orders.ts       # Order history extractor
 │   ├── actions/
-│   │   ├── navigate.ts     # URL-based navigation (date/meal switching)
-│   │   ├── cart.ts         # Add/remove cart items
-│   │   └── search.ts       # Search input handling
+│   │   └── cart.ts         # Add/remove cart items
 │   ├── formatters/
 │   │   └── text.ts         # Compact text output formatter
 │   └── types.ts            # TypeScript interfaces
-├── bin/
-│   └── webox               # Executable entry
-├── SKILL.md                # OpenClaw skill definition
+├── SKILL.md                # AI agent skill definition
 └── README.md
 ```
 
@@ -175,11 +169,7 @@ webox-tool/
 
 This is an open-source project by [@nox-0x](https://github.com/nox-0x) and [@aterrylu](https://github.com/aterrylu).
 
-PRs welcome! The main areas that need work:
-1. **Discovering exact DOM selectors** for WeBox's Angular components
-2. **Cart interaction flow** (add/remove items with customization options)
-3. **Menu caching** to reduce redundant browser launches
-4. **Support for other meal delivery services** (generalize the extractor pattern)
+PRs welcome!
 
 ## License
 
