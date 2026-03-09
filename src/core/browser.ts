@@ -117,12 +117,7 @@ export class BrowserSession {
     const shippingTime = meal === 'lunch' ? 'Lunch' : 'Dinner';
     const url = `https://www.webox.com/?date=${date}&shippingTime=${shippingTime}`;
 
-    // Only navigate if we're not already on the right page
-    const currentUrl = page.url();
-    if (currentUrl.includes(`date=${date}`) && currentUrl.includes(`shippingTime=${shippingTime}`)) {
-      return page;
-    }
-
+    // Always force a fresh page load to reset any active filters
     await page.goto(url, { waitUntil: 'domcontentloaded' });
 
     // Wait for Angular to render the menu
