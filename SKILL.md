@@ -34,7 +34,7 @@ npx tsx src/cli.ts orders [--days N]          # default: last 14 days
 ### Cart (safe — no checkout)
 ```bash
 npx tsx src/cli.ts cart
-npx tsx src/cli.ts add --id PRODUCT_ID --date YYYY-MM-DD [--meal lunch|dinner] [--options "option1,option2"]
+npx tsx src/cli.ts add --id PRODUCT_ID --date YYYY-MM-DD [--meal lunch|dinner] [--search "product name"] [--options "option1,option2"]
 npx tsx src/cli.ts remove --index N
 ```
 
@@ -47,14 +47,18 @@ Cart items: `[index] Name (portion) xQty — $Price`
 
 1. `status` — check browser connection and login
 2. `orders --days 14` — learn user preferences from past orders
-3. `brands --date` — see which restaurants are available that day
-4. `menu --date --meal --search "keyword"` — search for specific items (by name or brand). Use search to find what you want instead of browsing the full menu.
-5. `details --id` — check portions/ingredients/allergens if needed
-6. `add --id --date --meal` — add to cart (handles portion picker automatically)
-7. `cart` — verify cart and remaining budget
-8. Repeat 3-7 until user is satisfied
+3. `menu --date --meal --search "keyword"` — **always use `--search`** to find items by name or brand
+4. `details --id` — check portions/ingredients/allergens if needed
+5. `add --id --date --meal --search "product name"` — add to cart. **Always pass `--search` with the exact product name** so the tool can find it on the page.
+6. `cart` — verify cart and remaining budget
+7. Repeat 3-6 until user is satisfied
 
-**Efficient ordering:** Use `--search` to find items directly. For example, if the user liked "Chicken Katsu" before, search for it: `menu --date 2026-03-10 --meal lunch --search "katsu"`. Only use the full menu (no --search) when exploring new options.
+**IMPORTANT — always use `--search`:** The menu uses virtual scroll, so items not in the viewport don't exist in the DOM. Always search by name to make items visible. Example:
+```bash
+menu --date 2026-03-10 --meal lunch --search "Chicken Katsu"
+# sees: [12345] Chicken Katsu — SomeRestaurant | $12.00
+add --id 12345 --date 2026-03-10 --meal lunch --search "Chicken Katsu"
+```
 
 ## Domain Knowledge
 

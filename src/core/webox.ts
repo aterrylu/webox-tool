@@ -5,6 +5,7 @@ import { extractCart } from '../extractors/cart.js';
 import { extractBrands } from '../extractors/brands.js';
 import { extractProductDetail } from '../extractors/product.js';
 import { addToCart, removeFromCart } from '../actions/cart.js';
+import { searchOnPage } from '../actions/search.js';
 import { extractOrders, parseWeboxDate } from '../extractors/orders.js';
 import type { OrderPackage } from '../extractors/orders.js';
 import type { MenuItem, Cart, Brand, ProductDetail, ConnectionConfig } from '../types.js';
@@ -26,16 +27,12 @@ export class WeboxClient {
   async getMenu(date: string, meal: 'lunch' | 'dinner', opts?: MenuOptions): Promise<MenuItem[]> {
     const page = await this.session.navigate(date, meal);
 
-    let items = await extractMenuItems(page);
-
-    // Client-side search filter (WeBox search is dropdown-based, not grid-filter)
+    // Use WeBox's search bar to filter results on the page
     if (opts?.search) {
-      const q = opts.search.toLowerCase();
-      items = items.filter(item =>
-        item.name.toLowerCase().includes(q) ||
-        item.brand.toLowerCase().includes(q)
-      );
+      await searchOnPage(page, opts.search);
     }
+
+    let items = await extractMenuItems(page);
 
     return opts?.limit ? items.slice(0, opts.limit) : items;
   }
@@ -88,24 +85,14 @@ export class WeboxClient {
 
   // --- Write operations (cart only — never checkout) ---
 
-  async addToCart(id: number, date: string, meal: 'lunch' | 'dinner', options?: string[]): Promise<Cart> {
+  async addToCart(id: number, date: string, meal: 'lunch' | 'dinner', options?: string[], search?: string): Promise<Cart> {
     const page = await this.session.navigate(date, meal);
-    // Virtual scroll: scroll until the target product card is in the DOM
-    await page.evaluate(function () { window.scrollTo(0, 0); });
-    await page.waitForTimeout(500);
-    for (let i = 0; i < 50; i++) {
-      const found = await page.evaluate(function (pid) {
-        return document.querySelector('[id$="-' + pid + '"].product-menu-item-wrapper') !== null;
-      }, id);
-      if (found) break;
-      const scrolled = await page.evaluate(function () {
-        var before = window.scrollY;
-        window.scrollBy(0, window.innerHeight);
-        return window.scrollY > before;
-      });
-      if (!scrolled) break;
-      await page.waitForTimeout(400);
+
+    // Use WeBox's search to make the product card visible
+    if (search) {
+      await searchOnPage(page, search);
     }
+
     try {
       await addToCart(page, id, options);
     } catch (err) {
