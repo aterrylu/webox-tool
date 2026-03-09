@@ -46,12 +46,15 @@ Cart items: `[index] Name (portion) xQty — $Price`
 ## Workflow
 
 1. `status` — check browser connection and login
-2. `orders --days 14` — check past orders to learn user preferences
-3. `menu --date --meal` — browse available items
-4. `details --id` — check portions/ingredients/allergens if needed
-5. `add --id --date --meal` — add to cart (handles portion picker automatically)
-6. `cart` — verify cart and remaining budget
-7. Repeat 3-6 until user is satisfied
+2. `orders --days 14` — learn user preferences from past orders
+3. `brands --date` — see which restaurants are available that day
+4. `menu --date --meal --search "keyword"` — search for specific items (by name or brand). Use search to find what you want instead of browsing the full menu.
+5. `details --id` — check portions/ingredients/allergens if needed
+6. `add --id --date --meal` — add to cart (handles portion picker automatically)
+7. `cart` — verify cart and remaining budget
+8. Repeat 3-7 until user is satisfied
+
+**Efficient ordering:** Use `--search` to find items directly. For example, if the user liked "Chicken Katsu" before, search for it: `menu --date 2026-03-10 --meal lunch --search "katsu"`. Only use the full menu (no --search) when exploring new options.
 
 ## Domain Knowledge
 
