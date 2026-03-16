@@ -31,9 +31,10 @@ async function dismissOverlays(page: Page): Promise<void> {
 export async function addToCart(page: Page, productId: number, options?: string[]): Promise<void> {
   const card = page.locator(`[id$="-${productId}"].product-menu-item-wrapper`);
 
-  if (await card.count() === 0) {
+  // Wait up to 5s for the card to appear (search results may take a moment to render)
+  await card.waitFor({ state: 'attached', timeout: 5000 }).catch(() => {
     throw new Error(`Product ${productId} not found on current page`);
-  }
+  });
 
   // Check if item is sold out
   const soldOutWrapper = card.locator('.product-menu-top-sold-out-wrapper');
@@ -50,8 +51,8 @@ export async function addToCart(page: Page, productId: number, options?: string[
   await page.waitForTimeout(300);
   await dismissOverlays(page);
 
-  // Click the + button
-  const addBtn = card.locator('.plus-add, .product-add-wrapper');
+  // Click the + button (first match: main add btn, not the per-portion sub-buttons)
+  const addBtn = card.locator('.product-add-wrapper, .btn.plus-add.small-plus-add').first();
   await addBtn.click();
   await page.waitForTimeout(1500);
   await dismissOverlays(page);
@@ -61,8 +62,19 @@ export async function addToCart(page: Page, productId: number, options?: string[
   const modal = page.locator('app-dialog-profile-detail');
 
   if (await portionBox.count() > 0) {
-    // Portion picker: default portion is pre-selected, click + in the picker
-    await portionBox.locator('.portion-select-bottom .plus-add').click();
+    // Portion picker: select portion if specified, then click its + button
+    if (options && options.length > 0) {
+      for (const opt of options) {
+        const portionBtn = portionBox.locator('.portion-option-btn', { hasText: new RegExp(opt, 'i') });
+        if (await portionBtn.count() > 0) {
+          await portionBtn.first().click();
+          await page.waitForTimeout(300);
+          break;
+        }
+      }
+    }
+    // Click the + button for the currently selected portion (first visible plus-add)
+    await portionBox.locator('.portion-select-bottom .plus-add').first().click();
     await page.waitForTimeout(2000);
     await dismissOverlays(page);
   } else if (await modal.count() > 0) {
