@@ -10,17 +10,11 @@ import type { Page } from 'playwright';
  * The search query must match the product name exactly as shown in the DOM.
  */
 export async function searchOnPage(page: Page, query: string): Promise<void> {
-  // Find the search input in the header
-  const searchInput = page.locator('input').filter({ hasText: '' }).and(
-    page.locator('[placeholder*="earch" i], [placeholder*="filter" i], [type="search"], .search-input input, .header input')
-  );
-
-  // Fallback: try any input in the top area of the page
-  let input = searchInput.first();
-  if (await searchInput.count() === 0) {
-    // Try broader: any visible input that looks like a search
-    input = page.locator('input[placeholder]').first();
-  }
+  // WeBox header search: placeholder is "Search dishes, ingredients or flavors..."
+  // Fall through selectors from most to least specific.
+  const input = page.locator(
+    '[placeholder*="Search dishes" i], [placeholder*="earch" i], [type="search"], input[placeholder]'
+  ).first();
 
   if (await input.count() === 0) {
     throw new Error('Search input not found on page');

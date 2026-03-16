@@ -182,7 +182,7 @@ export async function removeFromCart(page: Page, index: number): Promise<void> {
 
   // Step 3: Find the item by name in the sidebar and click minus
   const sidebar = page.locator('app-b2b-cart-items');
-  const cartItem = sidebar.locator('app-b2b-cart-item').filter({ hasText: itemInfo.name });
+  const cartItem = sidebar.locator('app-b2b-product-item').filter({ hasText: itemInfo.name });
 
   if (await cartItem.count() === 0) {
     throw new Error(`Could not find "${itemInfo.name}" in cart sidebar`);
@@ -192,7 +192,7 @@ export async function removeFromCart(page: Page, index: number): Promise<void> {
   if (await minusBtn.count() === 0) {
     throw new Error(`Minus button not found for "${itemInfo.name}"`);
   }
-  await minusBtn.click();
+  await minusBtn.dispatchEvent('click');
   await page.waitForTimeout(500);
 
   // Handle "Are you sure to delete this item?" confirmation dialog

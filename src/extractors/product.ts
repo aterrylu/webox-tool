@@ -170,15 +170,9 @@ export async function extractProductDetail(page: Page, productId: number): Promi
     };
   }, productId);
 
-  // Close the modal
-  const closeBtn = page.locator('.ant-modal-close');
-  if (await closeBtn.count() > 0) {
-    await closeBtn.first().click();
-  }
-  await page.waitForTimeout(300);
-  // Fallback: press Escape
+  // Close the modal — Escape is the most reliable method
   await page.keyboard.press('Escape').catch(function () {});
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(300);
 
   return detail;
 }
