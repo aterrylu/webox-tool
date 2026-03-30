@@ -73,8 +73,13 @@ export async function addToCart(page: Page, productId: number, options?: string[
         }
       }
     }
-    // Click the + button for the currently selected portion (first visible plus-add)
-    await portionBox.locator('.portion-select-bottom .plus-add').first().click();
+    // Click the + button for the currently selected portion (the visible one)
+    const visibleCountBox = portionBox.locator('.portion-count-box').filter({ has: page.locator('.plus-add:visible') });
+    if (await visibleCountBox.count() > 0) {
+      await visibleCountBox.first().locator('.plus-add').dispatchEvent('click');
+    } else {
+      await portionBox.locator('.portion-select-bottom .plus-add').first().dispatchEvent('click');
+    }
     await page.waitForTimeout(2000);
     await dismissOverlays(page);
   } else if (await modal.count() > 0) {

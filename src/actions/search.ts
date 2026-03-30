@@ -23,7 +23,9 @@ export async function searchOnPage(page: Page, query: string): Promise<void> {
   await input.click();
   await input.fill(query);
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(1500);
+  // Wait for Angular to re-render search results (URL becomes ?queryText=...)
+  await page.waitForSelector('app-new-menu .product-menu-item-wrapper', { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(500);
 }
 
 /**

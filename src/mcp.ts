@@ -14,6 +14,18 @@ import {
 // One shared client for the life of the MCP server process
 const client = new WeboxClient();
 
+/**
+ * Reject weekend dates — WeBox does not deliver on Saturday or Sunday.
+ * Uses UTC day to avoid timezone ambiguity with YYYY-MM-DD strings.
+ */
+function assertDeliveryDate(date: string): void {
+  const day = new Date(date + 'T12:00:00Z').getUTCDay(); // 0=Sun, 6=Sat
+  if (day === 0 || day === 6) {
+    const name = day === 0 ? 'Sunday' : 'Saturday';
+    throw new Error(`WeBox does not deliver on weekends — ${date} is a ${name}`);
+  }
+}
+
 const server = new McpServer({
   name: 'webox',
   version: '0.1.0',
@@ -48,6 +60,7 @@ server.tool(
     limit: z.number().optional().default(30).describe('Max items to return'),
   },
   async ({ date, meal, search, limit }) => {
+    assertDeliveryDate(date);
     const items = await client.getMenu(date, meal, { search, limit });
     return {
       content: [{ type: 'text', text: formatMenuItems(items, date, meal) }],
@@ -80,6 +93,7 @@ server.tool(
     date: z.string().describe('Date in YYYY-MM-DD format'),
   },
   async ({ date }) => {
+    assertDeliveryDate(date);
     const brands = await client.getBrands(date);
     return { content: [{ type: 'text', text: formatBrands(brands, date) }] };
   }
@@ -122,6 +136,7 @@ server.tool(
     search: z.string().optional().describe('Product name to search for — makes the item visible on page. Strongly recommended.'),
   },
   async ({ id, date, meal, options, search }) => {
+    assertDeliveryDate(date);
     const cart = await client.addToCart(id, date, meal, options, search);
     return {
       content: [{

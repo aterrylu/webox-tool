@@ -32,7 +32,7 @@ export class WeboxClient {
       await searchOnPage(page, opts.search);
     }
 
-    let items = await extractMenuItems(page);
+    let items = await extractMenuItems(page, !!opts?.search);
 
     return opts?.limit ? items.slice(0, opts.limit) : items;
   }

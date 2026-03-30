@@ -11,11 +11,14 @@ import type { MenuItem } from '../types.js';
  * When no search is active, scrolls viewport-by-viewport to collect items,
  * deduplicating by product ID.
  */
-export async function extractMenuItems(page: Page): Promise<MenuItem[]> {
+export async function extractMenuItems(page: Page, searched?: boolean): Promise<MenuItem[]> {
   const itemMap = new Map<number, MenuItem>();
 
-  await page.evaluate(function () { window.scrollTo(0, 0); });
-  await page.waitForTimeout(500);
+  // Don't scroll to top when search is active — it resets the Angular search state
+  if (!searched) {
+    await page.evaluate(function () { window.scrollTo(0, 0); });
+    await page.waitForTimeout(500);
+  }
 
   // Scroll one viewport at a time, collecting items at each position
   for (let i = 0; i < 50; i++) {
@@ -35,7 +38,9 @@ export async function extractMenuItems(page: Page): Promise<MenuItem[]> {
     await page.waitForTimeout(400);
   }
 
-  await page.evaluate(function () { window.scrollTo(0, 0); });
+  if (!searched) {
+    await page.evaluate(function () { window.scrollTo(0, 0); });
+  }
   return Array.from(itemMap.values());
 }
 
